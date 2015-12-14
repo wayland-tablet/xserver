@@ -32,6 +32,7 @@
 #include <xkbsrv.h>
 #include <xserver-properties.h>
 #include <inpututils.h>
+#include "tablet-client-protocol.h"
 
 static void
 xwl_pointer_control(DeviceIntPtr device, PtrCtrl *ctrl)
