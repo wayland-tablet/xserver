@@ -806,9 +806,194 @@ xwl_seat_destroy(struct xwl_seat *xwl_seat)
     free(xwl_seat);
 }
 
+static void
+tablet_receive_name(void *data, struct zwp_tablet_v1 *tablet, const char *name)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet name '%s'\n", name);
+}
 
 static void
-tablet_seat_add_tablet(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet1 *tablet)
+tablet_receive_id(void *data, struct zwp_tablet_v1 *tablet, uint32_t vid,
+                  uint32_t pid)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet id %04x:%04x\n", vid, pid);
+}
+
+static void
+tablet_receive_type(void *data, struct zwp_tablet_v1 *tablet, uint32_t type)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet type %d\n", type);
+}
+
+static void
+tablet_receive_path(void *data, struct zwp_tablet_v1 *tablet, const char *path)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet path '%s'\n", path);
+}
+
+static void
+tablet_receive_done(void *data, struct zwp_tablet_v1 *tablet)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet DONE\n");
+}
+
+static void
+tablet_receive_removed(void *data, struct zwp_tablet_v1 *tablet)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet REMOVE\n");
+
+    zwp_tablet_v1_destroy(tablet);
+
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END receiving tablet REMOVE\n");
+}
+
+static const struct zwp_tablet_v1_listener tablet_listener = {
+    tablet_receive_name,
+    tablet_receive_id,
+    tablet_receive_type,
+    tablet_receive_path,
+    tablet_receive_done,
+    tablet_receive_removed
+};
+
+static void
+tablet_tool_receive_type(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t type)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool type %d\n", type);
+}
+
+static void
+tablet_tool_receive_serial_id(void *data, struct zwp_tablet_tool_v1 *tool,
+                              uint32_t hi, uint32_t low)
+{
+    unsigned long long serial = ((uint64_t)hi) << 32 | low;
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool serial id %llx\n", serial);
+}
+
+static void
+tablet_tool_receive_hardware_id(void *data, struct zwp_tablet_tool_v1 *tool,
+                                uint32_t format, uint32_t hi, uint32_t low)
+{
+    unsigned long long hwid = ((uint64_t)hi) << 32 | low;
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool hardware id %llu (format %d)\n", hwid, format);
+}
+
+static void
+tablet_tool_receive_capability(void *data, struct zwp_tablet_tool_v1 *tool,
+                               uint32_t capability)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool capabilities %x\n", capability);
+}
+
+static void
+tablet_tool_receive_done(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool DONE\n");
+}
+
+static void
+tablet_tool_receive_removed(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool REMOVED\n");
+
+    zwp_tablet_tool_v1_destroy(tool);
+
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END receiving tool REMOVED\n");
+}
+
+static void
+tablet_tool_proximity_in(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t serial, struct zwp_tablet_v1 *tablet,
+                         struct wl_surface *wl_surface)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY IN (%d)\n", serial);
+}
+
+static void
+tablet_tool_proximity_out(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY OUT\n");
+}
+
+static void
+tablet_tool_down(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t serial)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool DOWN (%d)\n", serial);
+}
+
+static void
+tablet_tool_up(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool UP\n");
+}
+
+static void
+tablet_tool_motion(void *data, struct zwp_tablet_tool_v1 *tool,
+                   wl_fixed_t x, wl_fixed_t y)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool MOTION (%d, %d)\n", x, y);
+}
+
+static void
+tablet_tool_pressure(void *data, struct zwp_tablet_tool_v1 *tool,
+                     uint32_t pressure_raw)
+{
+    float pressure = pressure_raw / 65535.0;
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PRESSURE %0.3f\n", pressure);
+}
+
+static void
+tablet_tool_distance(void *data, struct zwp_tablet_tool_v1 *tool,
+                     uint32_t distance_raw)
+{
+    float distance = distance_raw / 65535.0;
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool DISTANCE %0.3f\n", distance);
+}
+
+static void
+tablet_tool_tilt(void *data, struct zwp_tablet_tool_v1 *tool,
+                 int32_t tilt_x_raw, int32_t tilt_y_raw)
+{
+    float tilt_x_deg = tilt_x_raw / 65535.0 * 64.0;
+    float tilt_y_deg = tilt_y_raw / 65535.0 * 64.0;
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool TILT %03f, %03f\n", tilt_x_deg, tilt_y_deg);
+}
+
+static void
+tablet_tool_button_state(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t serial, uint32_t button, uint32_t state)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool BUTTON STATE %d (%d %s)\n", serial, button, state ? "PRESSED" : "RELEASED");
+}
+
+static void
+tablet_tool_frame(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t time)
+{
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool FRAME %d\n", time);
+}
+
+static const struct zwp_tablet_tool_v1_listener tablet_tool_listener = {
+    tablet_tool_receive_type,
+    tablet_tool_receive_serial_id,
+    tablet_tool_receive_hardware_id,
+    tablet_tool_receive_capability,
+    tablet_tool_receive_done,
+    tablet_tool_receive_removed,
+    tablet_tool_proximity_in,
+    tablet_tool_proximity_out,
+    tablet_tool_down,
+    tablet_tool_up,
+    tablet_tool_motion,
+    tablet_tool_pressure,
+    tablet_tool_distance,
+    tablet_tool_tilt,
+    tablet_tool_button_state,
+    tablet_tool_frame
+};
+
+static void
+tablet_seat_add_tablet(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_v1 *tablet)
 {
     struct xwl_seat *xwl_seat = data;
     struct xwl_tablet *xwl_tablet;
@@ -824,11 +1009,13 @@ tablet_seat_add_tablet(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struc
 
     xorg_list_add(&xwl_tablet->link, &xwl_seat->tablets);
 
+    zwp_tablet_v1_add_listener(tablet, &tablet_listener, xwl_seat);
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END adding tablet\n");
 }
 
 static void
-tablet_seat_add_tool(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_tool1 *tool)
+tablet_seat_add_tool(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_tool_v1 *tool)
 {
     struct xwl_seat *xwl_seat = data;
     struct xwl_tablet_tool *xwl_tablet_tool;
@@ -843,6 +1030,8 @@ tablet_seat_add_tool(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct 
     xwl_tablet_tool->tool = tool;
 
     xorg_list_add(&xwl_tablet_tool->link, &xwl_seat->tablet_tools);
+
+    zwp_tablet_tool_v1_add_listener(tool, &tablet_tool_listener, xwl_seat);
 
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END adding tablet tool\n");
 }
