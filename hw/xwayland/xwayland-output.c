@@ -122,7 +122,7 @@ output_handle_mode(void *data, struct wl_output *wl_output, uint32_t flags,
 
 static inline void
 output_get_new_size(struct xwl_output *xwl_output,
-		    int *height, int *width)
+                    int *height, int *width)
 {
     if (*width < xwl_output->x + xwl_output->width)
         *width = xwl_output->x + xwl_output->width;
@@ -183,7 +183,7 @@ output_handle_done(void *data, struct wl_output *wl_output)
         /* we did not check this output for new screen size, do it now */
         output_get_new_size(xwl_output, &height, &width);
 
-	--xwl_screen->expecting_event;
+        --xwl_screen->expecting_event;
     }
 
     if (xwl_screen->screen->root)
