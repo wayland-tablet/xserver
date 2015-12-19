@@ -72,6 +72,7 @@ struct xwl_screen {
     struct wl_registry *registry;
     struct wl_registry *input_registry;
     struct wl_compositor *compositor;
+    struct zwp_tablet_manager_v1 *tablet_manager;
     struct wl_shm *shm;
     struct wl_shell *shell;
 
@@ -122,6 +123,7 @@ struct xwl_seat {
     struct wl_pointer *wl_pointer;
     struct wl_keyboard *wl_keyboard;
     struct wl_touch *wl_touch;
+    struct zwp_tablet_seat_v1 *tablet_seat;
     struct wl_array keys;
     struct xwl_window *focus_window;
     uint32_t id;
