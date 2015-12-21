@@ -1,5 +1,8 @@
 bin_PROGRAMS = Xwayland
 
+CLEANFILES = $(NULL)
+BUILT_SOURCES = $(NULL)
+
 Xwayland_CFLAGS =				\
 	-I$(top_srcdir)/glamor			\
 	-I$(top_srcdir)/dri3			\
@@ -21,6 +24,8 @@ Xwayland_SOURCES =				\
 	$(top_srcdir)/Xi/stubs.c		\
 	$(top_srcdir)/mi/miinitext.c
 
+nodist_Xwayland_SOURCES = $(NULL)
+
 Xwayland_LDADD =				\
 	$(glamor_lib)				\
 	$(XWAYLAND_LIBS)			\
@@ -28,17 +33,18 @@ Xwayland_LDADD =				\
 	$(XSERVER_SYS_LIBS)
 Xwayland_LDFLAGS = $(LD_EXPORT_SYMBOLS_FLAG)
 
-
 if GLAMOR_EGL
 Xwayland_SOURCES += xwayland-glamor.c
 
-nodist_Xwayland_SOURCES =			\
+glamor_sources =				\
 	drm-client-protocol.h			\
 	drm-protocol.c
 
-CLEANFILES = $(nodist_Xwayland_SOURCES)
+nodist_Xwayland_SOURCES += $(glamor_sources)
 
-xwayland-glamor.c : $(nodist_Xwayland_SOURCES)
+CLEANFILES += $(glamor_sources)
+
+xwayland-glamor.c : $(glamor_sources)
 
 glamor_lib = $(top_builddir)/glamor/libglamor.la
 
