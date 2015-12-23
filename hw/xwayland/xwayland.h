@@ -155,6 +155,7 @@ struct xwl_tablet {
 struct xwl_tablet_tool {
     struct xorg_list link;
     struct zwp_tablet_tool_v1 *tool;
+    DeviceIntPtr xdevice;
     uint32_t x;
     uint32_t y;
     uint32_t pressure;
