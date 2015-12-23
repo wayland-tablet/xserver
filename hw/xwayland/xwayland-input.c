@@ -982,7 +982,28 @@ static void
 tablet_tool_receive_type(void *data, struct zwp_tablet_tool_v1 *tool,
                          uint32_t type)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool type %d\n", type);
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            switch (type) {
+                case ZWP_TABLET_TOOL_V1_TYPE_ERASER:
+                    xwl_tablet_tool->xdevice = xwl_seat->eraser;
+                    break;
+                case ZWP_TABLET_TOOL_V1_TYPE_MOUSE:
+                case ZWP_TABLET_TOOL_V1_TYPE_LENS:
+                    xwl_tablet_tool->xdevice = xwl_seat->puck;
+                    break;
+                default:
+                    xwl_tablet_tool->xdevice = xwl_seat->stylus;
+                    break;
+            }
+            break;
+        }
+    }
 }
 
 static void
@@ -1072,8 +1093,7 @@ tablet_tool_down(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t serial)
     xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
         if (xwl_tablet_tool->tool == tool) {
             valuator_mask_zero(&mask);
-            //FIXME: USE PROPER X DEVICE!
-            QueuePointerEvents(xwl_seat->stylus, ButtonPress, 1, 0, &mask);
+            QueuePointerEvents(xwl_tablet_tool->xdevice, ButtonPress, 1, 0, &mask);
             break;
         }
     }
@@ -1091,8 +1111,7 @@ tablet_tool_up(void *data, struct zwp_tablet_tool_v1 *tool)
     xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
         if (xwl_tablet_tool->tool == tool) {
             valuator_mask_zero(&mask);
-            //FIXME: USE PROPER X DEVICE!
-            QueuePointerEvents(xwl_seat->stylus, ButtonRelease, 1, 0, &mask);
+            QueuePointerEvents(xwl_tablet_tool->xdevice, ButtonRelease, 1, 0, &mask);
             break;
         }
     }
@@ -1194,8 +1213,7 @@ tablet_tool_button_state(void *data, struct zwp_tablet_tool_v1 *tool,
         if (xwl_tablet_tool->tool == tool) {
             valuator_mask_zero(&mask);
             //FIXME: Use proper button number
-            //FIXME: USE PROPER X DEVICE!
-            QueuePointerEvents(xwl_seat->stylus, state ? ButtonPress : ButtonRelease, button, 0, &mask);
+            QueuePointerEvents(xwl_tablet_tool->xdevice, state ? ButtonPress : ButtonRelease, button, 0, &mask);
             break;
         }
     }
@@ -1219,8 +1237,7 @@ tablet_tool_frame(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t time)
             valuator_mask_set(&mask, 4, xwl_tablet_tool->tilt_y);
 
             //FIXME: Store button mask in xwl_tablet_tool and send events *HERE* if changed
-            //FIXME: FIND THE APPROPRIATE X DEVICE FOR THIS TOOL
-            QueuePointerEvents(xwl_seat->stylus, MotionNotify, 0,
+            QueuePointerEvents(xwl_tablet_tool->xdevice, MotionNotify, 0,
                        POINTER_ABSOLUTE | POINTER_SCREEN, &mask);
             break;
         }
