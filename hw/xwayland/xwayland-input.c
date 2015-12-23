@@ -35,6 +35,8 @@
 #include <mipointer.h>
 #include <mipointrst.h>
 
+#include "tablet-client-protocol.h"
+
 /* Copied from mipointer.c */
 #define MIPOINTER(dev) \
     (IsFloating(dev) ? \
