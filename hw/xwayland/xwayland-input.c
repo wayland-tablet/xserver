@@ -1031,18 +1031,7 @@ tablet_tool_receive_type(void *data, struct zwp_tablet_tool_v1 *tool,
 
     xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
         if (xwl_tablet_tool->tool == tool) {
-            switch (type) {
-                case ZWP_TABLET_TOOL_V1_TYPE_ERASER:
-                    xwl_tablet_tool->xdevice = xwl_seat->eraser;
-                    break;
-                case ZWP_TABLET_TOOL_V1_TYPE_MOUSE:
-                case ZWP_TABLET_TOOL_V1_TYPE_LENS:
-                    xwl_tablet_tool->xdevice = xwl_seat->puck;
-                    break;
-                default:
-                    xwl_tablet_tool->xdevice = xwl_seat->stylus;
-                    break;
-            }
+            xwl_tablet_tool->type = type;
             break;
         }
     }
@@ -1104,8 +1093,39 @@ tablet_tool_proximity_in(void *data, struct zwp_tablet_tool_v1 *tool,
                          struct wl_surface *wl_surface)
 {
     struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    struct xwl_tablet *xwl_tablet;
+    Bool tablet_located = FALSE;
 
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY IN (%d)\n", serial);
+
+    xorg_list_for_each_entry(xwl_tablet, &xwl_seat->tablets, link) {
+        if (xwl_tablet->tablet == tablet) {
+            tablet_located = TRUE;
+            break;
+        }
+    }
+
+    if (!tablet_located)
+        return;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            switch (xwl_tablet_tool->type) {
+                case ZWP_TABLET_TOOL_V1_TYPE_ERASER:
+                    xwl_tablet_tool->xdevice = xwl_tablet->eraser;
+                    break;
+                case ZWP_TABLET_TOOL_V1_TYPE_MOUSE:
+                case ZWP_TABLET_TOOL_V1_TYPE_LENS:
+                    xwl_tablet_tool->xdevice = xwl_tablet->puck;
+                    break;
+                default:
+                    xwl_tablet_tool->xdevice = xwl_tablet->stylus;
+                    break;
+            }
+            break;
+        }
+    }
 
     //FIXME: Do we need the same NULL check used by the pointer?
     xwl_seat->focus_window = wl_surface_get_user_data(wl_surface);
@@ -1115,8 +1135,16 @@ static void
 tablet_tool_proximity_out(void *data, struct zwp_tablet_tool_v1 *tool)
 {
     struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
 
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY OUT\n");
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            xwl_tablet_tool->xdevice = NULL;
+            break;
+        }
+    }
 
     xwl_seat->focus_window = NULL;
 }
