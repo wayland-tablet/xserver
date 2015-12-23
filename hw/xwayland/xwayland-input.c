@@ -1026,40 +1026,111 @@ tablet_tool_proximity_in(void *data, struct zwp_tablet_tool_v1 *tool,
                          uint32_t serial, struct zwp_tablet_v1 *tablet,
                          struct wl_surface *wl_surface)
 {
+    struct xwl_seat *xwl_seat = data;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY IN (%d)\n", serial);
+
+    //FIXME: Do we need the same NULL check used by the pointer?
+    xwl_seat->focus_window = wl_surface_get_user_data(wl_surface);
 }
 
 static void
 tablet_tool_proximity_out(void *data, struct zwp_tablet_tool_v1 *tool)
 {
+    struct xwl_seat *xwl_seat = data;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PROXIMITY OUT\n");
+
+    xwl_seat->focus_window = NULL;
 }
 
 static void
 tablet_tool_down(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t serial)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    ValuatorMask mask;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool DOWN (%d)\n", serial);
+
+    xwl_seat->xwl_screen->serial = serial;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            valuator_mask_zero(&mask);
+            //FIXME: USE PROPER X DEVICE!
+            QueuePointerEvents(xwl_seat->stylus, ButtonPress, 1, 0, &mask);
+            break;
+        }
+    }
 }
 
 static void
 tablet_tool_up(void *data, struct zwp_tablet_tool_v1 *tool)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    ValuatorMask mask;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool UP\n");
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            valuator_mask_zero(&mask);
+            //FIXME: USE PROPER X DEVICE!
+            QueuePointerEvents(xwl_seat->stylus, ButtonRelease, 1, 0, &mask);
+            break;
+        }
+    }
 }
 
 static void
 tablet_tool_motion(void *data, struct zwp_tablet_tool_v1 *tool,
                    wl_fixed_t x, wl_fixed_t y)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    int32_t dx, dy;
+    int sx = wl_fixed_to_int(x);
+    int sy = wl_fixed_to_int(y);
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool MOTION (%d, %d)\n", x, y);
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    dx = xwl_seat->focus_window->window->drawable.x;
+    dy = xwl_seat->focus_window->window->drawable.y;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool MOVING INPUT(%d, %d) DRAWABLE(%d, %d) FIXED(%d, %d) OLD(%d, %d), NEW(%d, %d)\n", x, y, dx, dy, sx, sy, xwl_tablet_tool->x, xwl_tablet_tool->y, dx + sx, dy + sy);
+            xwl_tablet_tool->x = dx + sx;
+            xwl_tablet_tool->y = dy + sy;
+            break;
+        }
+    }
 }
 
 static void
 tablet_tool_pressure(void *data, struct zwp_tablet_tool_v1 *tool,
                      uint32_t pressure_raw)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
     float pressure = pressure_raw / 65535.0;
-    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PRESSURE %0.3f\n", pressure);
+
+    //LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool PRESSURE %0.3f\n", pressure);
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            xwl_tablet_tool->pressure = (uint32_t)(pressure * 2048);
+            break;
+        }
+    }
 }
 
 static void
@@ -1067,29 +1138,79 @@ tablet_tool_distance(void *data, struct zwp_tablet_tool_v1 *tool,
                      uint32_t distance_raw)
 {
     float distance = distance_raw / 65535.0;
-    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool DISTANCE %0.3f\n", distance);
+    //LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool DISTANCE %0.3f\n", distance);
 }
 
 static void
 tablet_tool_tilt(void *data, struct zwp_tablet_tool_v1 *tool,
                  int32_t tilt_x_raw, int32_t tilt_y_raw)
 {
-    float tilt_x_deg = tilt_x_raw / 65535.0 * 64.0;
-    float tilt_y_deg = tilt_y_raw / 65535.0 * 64.0;
-    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool TILT %03f, %03f\n", tilt_x_deg, tilt_y_deg);
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    float tilt_x = tilt_x_raw / 65535.0;
+    float tilt_y = tilt_y_raw / 65535.0;
+
+    //LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool TILT %03f, %03f\n", tilt_x, tilt_y);
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            xwl_tablet_tool->tilt_x = (uint32_t)(tilt_x * 64);
+            xwl_tablet_tool->tilt_y = (uint32_t)(tilt_y * 64);
+            break;
+        }
+    }
 }
 
 static void
 tablet_tool_button_state(void *data, struct zwp_tablet_tool_v1 *tool,
                          uint32_t serial, uint32_t button, uint32_t state)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    ValuatorMask mask;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool BUTTON STATE %d (%d %s)\n", serial, button, state ? "PRESSED" : "RELEASED");
+
+    xwl_seat->xwl_screen->serial = serial;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            valuator_mask_zero(&mask);
+            //FIXME: Use proper button number
+            //FIXME: USE PROPER X DEVICE!
+            QueuePointerEvents(xwl_seat->stylus, state ? ButtonPress : ButtonRelease, button, 0, &mask);
+            break;
+        }
+    }
 }
 
 static void
 tablet_tool_frame(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t time)
 {
-    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool FRAME %d\n", time);
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    ValuatorMask mask;
+
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: tool FRAME %d (%d, %d, %d, %d, %d)\n", time, xwl_tablet_tool->x, xwl_tablet_tool->y, xwl_tablet_tool->pressure, xwl_tablet_tool->tilt_x, xwl_tablet_tool->tilt_x);
+            valuator_mask_zero(&mask);
+            valuator_mask_set(&mask, 0, xwl_tablet_tool->x);
+            valuator_mask_set(&mask, 1, xwl_tablet_tool->y);
+            valuator_mask_set(&mask, 2, xwl_tablet_tool->pressure);
+            valuator_mask_set(&mask, 3, xwl_tablet_tool->tilt_x);
+            valuator_mask_set(&mask, 4, xwl_tablet_tool->tilt_y);
+
+            //FIXME: Store button mask in xwl_tablet_tool and send events *HERE* if changed
+            //FIXME: FIND THE APPROPRIATE X DEVICE FOR THIS TOOL
+            QueuePointerEvents(xwl_seat->stylus, MotionNotify, 0,
+                       POINTER_ABSOLUTE | POINTER_SCREEN, &mask);
+            break;
+        }
+    }
 }
 
 static const struct zwp_tablet_tool_v1_listener tablet_tool_listener = {
