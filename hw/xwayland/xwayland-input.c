@@ -213,6 +213,71 @@ xwl_touch_proc(DeviceIntPtr device, int what)
 #undef NTOUCHPOINTS
 }
 
+static int
+xwl_tablet_proc(DeviceIntPtr device, int what)
+{
+#define NBUTTONS 9
+#define NAXES 6
+    Atom btn_labels[NBUTTONS] = { 0 };
+    Atom axes_labels[NAXES] = { 0 };
+    BYTE map[NBUTTONS + 1] = { 0 };
+    int i;
+
+    switch (what) {
+    case DEVICE_INIT:
+        device->public.on = FALSE;
+
+        for (i = 1; i <= NBUTTONS; i++)
+            map[i] = i;
+
+        axes_labels[0] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_X);
+        axes_labels[1] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_Y);
+        axes_labels[2] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_PRESSURE);
+        axes_labels[3] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_X);
+        axes_labels[4] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_Y);
+        axes_labels[5] = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_WHEEL);
+
+        if (!InitValuatorClassDeviceStruct(device, NAXES, axes_labels,
+                                           GetMotionHistorySize(), Absolute))
+            return BadValue;
+
+        /* Valuators */
+        InitValuatorAxisStruct(device, 0, axes_labels[0],
+                               0, 262143, 10000, 0, 10000, Absolute);
+        InitValuatorAxisStruct(device, 1, axes_labels[1],
+                               0, 262143, 10000, 0, 10000, Absolute);
+        InitValuatorAxisStruct(device, 2, axes_labels[2],
+                               0, 2048, 1, 0, 1, Absolute);
+        InitValuatorAxisStruct(device, 3, axes_labels[3],
+                               -64, 63, 57, 0, 57, Absolute);
+        InitValuatorAxisStruct(device, 4, axes_labels[4],
+                               -64, 63, 57, 0, 57, Absolute);
+        InitValuatorAxisStruct(device, 5, axes_labels[5],
+                               -900, 899, 1, 0, 1, Absolute);
+
+        if (!InitPtrFeedbackClassDeviceStruct(device, xwl_pointer_control))
+            return BadValue;
+
+        if (!InitButtonClassDeviceStruct(device, NBUTTONS, btn_labels, map))
+            return BadValue;
+
+        return Success;
+
+    case DEVICE_ON:
+        device->public.on = TRUE;
+        return Success;
+
+    case DEVICE_OFF:
+    case DEVICE_CLOSE:
+        device->public.on = FALSE;
+        return Success;
+    }
+
+    return BadMatch;
+#undef NAXES
+#undef NBUTTONS
+}
+
 static void
 pointer_handle_enter(void *data, struct wl_pointer *pointer,
                      uint32_t serial, struct wl_surface *surface,
@@ -849,13 +914,56 @@ tablet_receive_path(void *data, struct zwp_tablet_v1 *tablet, const char *path)
 static void
 tablet_receive_done(void *data, struct zwp_tablet_v1 *tablet)
 {
+    struct xwl_seat *xwl_seat = data;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet DONE\n");
+
+    if (xwl_seat->stylus == NULL) {
+        xwl_seat->stylus = add_device(xwl_seat, "xwayland-stylus", xwl_tablet_proc);
+        ActivateDevice(xwl_seat->stylus, TRUE);
+    }
+    EnableDevice(xwl_seat->stylus, TRUE);
+    
+    if (xwl_seat->eraser == NULL) {
+        xwl_seat->eraser = add_device(xwl_seat, "xwayland-eraser", xwl_tablet_proc);
+        ActivateDevice(xwl_seat->eraser, TRUE);
+    }
+    EnableDevice(xwl_seat->eraser, TRUE);
+
+    if (xwl_seat->puck == NULL) {
+        xwl_seat->puck = add_device(xwl_seat, "xwayland-cursor", xwl_tablet_proc);
+        ActivateDevice(xwl_seat->puck, TRUE);
+    }
+    EnableDevice(xwl_seat->puck, TRUE);
+
+    LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END receiving tablet DONE\n");
 }
 
 static void
 tablet_receive_removed(void *data, struct zwp_tablet_v1 *tablet)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet, *next_xwl_tablet;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet REMOVE\n");
+
+    xorg_list_for_each_entry_safe(xwl_tablet, next_xwl_tablet,
+                                  &xwl_seat->tablets, link) {
+        if (xwl_tablet->tablet == tablet) {
+            xorg_list_del(&xwl_tablet->link);
+            free(xwl_tablet);
+        }
+    }
+
+    if (xorg_list_is_empty(&xwl_seat->tablets)) {
+        LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: No tablets left... Disabling devices.\n");
+        if (xwl_seat->stylus)
+            DisableDevice(xwl_seat->stylus, TRUE);
+        if (xwl_seat->eraser)
+            DisableDevice(xwl_seat->eraser, TRUE);
+        if (xwl_seat->puck)
+            DisableDevice(xwl_seat->puck, TRUE);
+    }
 
     zwp_tablet_v1_destroy(tablet);
 
@@ -909,7 +1017,18 @@ tablet_tool_receive_done(void *data, struct zwp_tablet_tool_v1 *tool)
 static void
 tablet_tool_receive_removed(void *data, struct zwp_tablet_tool_v1 *tool)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool, *next_xwl_tablet_tool;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tool REMOVED\n");
+
+    xorg_list_for_each_entry_safe(xwl_tablet_tool, next_xwl_tablet_tool,
+                                  &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            xorg_list_del(&xwl_tablet_tool->link);
+            free(xwl_tablet_tool);
+        }
+    }
 
     zwp_tablet_tool_v1_destroy(tool);
 
