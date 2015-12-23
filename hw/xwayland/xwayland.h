@@ -150,6 +150,17 @@ struct xwl_seat {
 struct xwl_tablet {
     struct xorg_list link;
     struct zwp_tablet_v1 *tablet;
+    DeviceIntPtr stylus;
+    DeviceIntPtr eraser;
+    DeviceIntPtr puck;
+    char *stylus_name;
+    char *eraser_name;
+    char *puck_name;
+
+    uint32_t vid;
+    uint32_t pid;
+    char *name;
+    char *path;
 };
 
 struct xwl_tablet_tool {

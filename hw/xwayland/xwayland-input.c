@@ -895,46 +895,98 @@ xwl_seat_destroy(struct xwl_seat *xwl_seat)
 static void
 tablet_receive_name(void *data, struct zwp_tablet_v1 *tablet, const char *name)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet name '%s'\n", name);
+
+    xorg_list_for_each_entry(xwl_tablet, &xwl_seat->tablets, link) {
+        if (xwl_tablet->tablet == tablet) {
+            xwl_tablet->name = malloc(strlen(name) + 1);
+            strcpy(xwl_tablet->name, name);
+            break;
+        }
+    }
 }
 
 static void
 tablet_receive_id(void *data, struct zwp_tablet_v1 *tablet, uint32_t vid,
                   uint32_t pid)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet id %04x:%04x\n", vid, pid);
+
+    xorg_list_for_each_entry(xwl_tablet, &xwl_seat->tablets, link) {
+        if (xwl_tablet->tablet == tablet) {
+            xwl_tablet->vid = vid;
+            xwl_tablet->pid = pid;
+            break;
+        }
+    }
 }
 
 static void
 tablet_receive_path(void *data, struct zwp_tablet_v1 *tablet, const char *path)
 {
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet;
+
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet path '%s'\n", path);
+
+    xorg_list_for_each_entry(xwl_tablet, &xwl_seat->tablets, link) {
+        if (xwl_tablet->tablet == tablet) {
+            xwl_tablet->path = malloc(strlen(path) + 1);
+            strcpy(xwl_tablet->path, path);
+            break;
+        }
+    }
 }
 
 static void
 tablet_receive_done(void *data, struct zwp_tablet_v1 *tablet)
 {
     struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet;
 
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: receiving tablet DONE\n");
 
-    if (xwl_seat->stylus == NULL) {
-        xwl_seat->stylus = add_device(xwl_seat, "xwayland-stylus", xwl_tablet_proc);
-        ActivateDevice(xwl_seat->stylus, TRUE);
-    }
-    EnableDevice(xwl_seat->stylus, TRUE);
-    
-    if (xwl_seat->eraser == NULL) {
-        xwl_seat->eraser = add_device(xwl_seat, "xwayland-eraser", xwl_tablet_proc);
-        ActivateDevice(xwl_seat->eraser, TRUE);
-    }
-    EnableDevice(xwl_seat->eraser, TRUE);
+    xorg_list_for_each_entry(xwl_tablet, &xwl_seat->tablets, link) {
+        //FIXME: What happens when malloc fails?!?
+        if (xwl_tablet->tablet == tablet) {
+            if (xwl_tablet->stylus == NULL) {
+                xwl_tablet->stylus_name = malloc(strlen(xwl_tablet->name) +
+                                                 strlen(" stylus") + 1);
+                sprintf(xwl_tablet->stylus_name, "%s stylus", xwl_tablet->name);
+                xwl_tablet->stylus = add_device(xwl_seat, xwl_tablet->stylus_name,
+                                                xwl_tablet_proc);
+                ActivateDevice(xwl_tablet->stylus, TRUE);
+            }
+            EnableDevice(xwl_tablet->stylus, TRUE);
 
-    if (xwl_seat->puck == NULL) {
-        xwl_seat->puck = add_device(xwl_seat, "xwayland-cursor", xwl_tablet_proc);
-        ActivateDevice(xwl_seat->puck, TRUE);
+            if (xwl_tablet->eraser == NULL) {
+                xwl_tablet->eraser_name = malloc(strlen(xwl_tablet->name) +
+                                                 strlen(" eraser") + 1);
+                sprintf(xwl_tablet->eraser_name, "%s eraser", xwl_tablet->name);
+                xwl_tablet->eraser = add_device(xwl_seat, xwl_tablet->eraser_name,
+                                                xwl_tablet_proc);
+                ActivateDevice(xwl_tablet->eraser, TRUE);
+            }
+            EnableDevice(xwl_tablet->eraser, TRUE);
+
+            if (xwl_tablet->puck == NULL) {
+                xwl_tablet->puck_name = malloc(strlen(xwl_tablet->name) +
+                                               strlen(" cursor") + 1);
+                sprintf(xwl_tablet->puck_name, "%s cursor", xwl_tablet->name);
+                xwl_tablet->puck = add_device(xwl_seat, xwl_tablet->puck_name,
+                                              xwl_tablet_proc);
+                ActivateDevice(xwl_tablet->puck, TRUE);
+            }
+            EnableDevice(xwl_tablet->puck, TRUE);
+            break;
+        }
     }
-    EnableDevice(xwl_seat->puck, TRUE);
 
     LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: END receiving tablet DONE\n");
 }
@@ -950,19 +1002,23 @@ tablet_receive_removed(void *data, struct zwp_tablet_v1 *tablet)
     xorg_list_for_each_entry_safe(xwl_tablet, next_xwl_tablet,
                                   &xwl_seat->tablets, link) {
         if (xwl_tablet->tablet == tablet) {
+            if (xwl_tablet->stylus)
+                DisableDevice(xwl_tablet->stylus, TRUE);
+            if (xwl_tablet->eraser)
+                DisableDevice(xwl_tablet->eraser, TRUE);
+            if (xwl_tablet->puck)
+                DisableDevice(xwl_tablet->puck, TRUE);
+
+            free(xwl_tablet->name);
+            free(xwl_tablet->path);
+            free(xwl_tablet->stylus_name);
+            free(xwl_tablet->eraser_name);
+            free(xwl_tablet->puck_name);
+
             xorg_list_del(&xwl_tablet->link);
             free(xwl_tablet);
+            break;
         }
-    }
-
-    if (xorg_list_is_empty(&xwl_seat->tablets)) {
-        LogMessageVerbSigSafe(X_NOTICE, -1, "xwayland: No tablets left... Disabling devices.\n");
-        if (xwl_seat->stylus)
-            DisableDevice(xwl_seat->stylus, TRUE);
-        if (xwl_seat->eraser)
-            DisableDevice(xwl_seat->eraser, TRUE);
-        if (xwl_seat->puck)
-            DisableDevice(xwl_seat->puck, TRUE);
     }
 
     zwp_tablet_v1_destroy(tablet);
