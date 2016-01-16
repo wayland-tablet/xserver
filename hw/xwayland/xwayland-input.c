@@ -977,6 +977,326 @@ static const struct zwp_tablet_v1_listener tablet_listener = {
     tablet_receive_removed
 };
 
+static struct xwl_tablet_tool*
+find_xwl_tablet_tool(struct xwl_seat *xwl_seat, struct zwp_tablet_tool_v1 *tool)
+{
+    struct xwl_tablet_tool *xwl_tablet_tool;
+    xorg_list_for_each_entry(xwl_tablet_tool, &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            return xwl_tablet_tool;
+        }
+    }
+    ErrorF("Unknown xwl_tablet_tool\n");
+    return NULL;
+}
+
+static void
+tablet_tool_receive_type(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t type)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+
+    switch (type) {
+        case ZWP_TABLET_TOOL_V1_TYPE_ERASER:
+            xwl_tablet_tool->xdevice = xwl_seat->eraser;
+            break;
+        case ZWP_TABLET_TOOL_V1_TYPE_MOUSE:
+        case ZWP_TABLET_TOOL_V1_TYPE_LENS:
+            xwl_tablet_tool->xdevice = xwl_seat->puck;
+            break;
+        default:
+            xwl_tablet_tool->xdevice = xwl_seat->stylus;
+            break;
+    }
+}
+
+static void
+tablet_tool_receive_hardware_serial(void *data, struct zwp_tablet_tool_v1 *tool,
+                                    uint32_t hi, uint32_t low)
+{
+}
+
+static void
+tablet_tool_receive_hardware_id_wacom(void *data, struct zwp_tablet_tool_v1 *tool,
+                                      uint32_t hi, uint32_t low)
+{
+}
+
+static void
+tablet_tool_receive_capability(void *data, struct zwp_tablet_tool_v1 *tool,
+                               uint32_t capability)
+{
+}
+
+static void
+tablet_tool_receive_done(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+}
+
+static void
+tablet_tool_receive_removed(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool, *next_xwl_tablet_tool;
+
+    xorg_list_for_each_entry_safe(xwl_tablet_tool, next_xwl_tablet_tool,
+                                  &xwl_seat->tablet_tools, link) {
+        if (xwl_tablet_tool->tool == tool) {
+            xorg_list_del(&xwl_tablet_tool->link);
+            free(xwl_tablet_tool);
+        }
+    }
+    zwp_tablet_tool_v1_destroy(tool);
+}
+
+static void
+tablet_tool_proximity_in(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t serial, struct zwp_tablet_v1 *tablet,
+                         struct wl_surface *wl_surface)
+{
+    struct xwl_seat *xwl_seat = data;
+
+    //FIXME: Do we need the same NULL check used by the pointer?
+    xwl_seat->focus_window = wl_surface_get_user_data(wl_surface);
+}
+
+static void
+tablet_tool_proximity_out(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    struct xwl_seat *xwl_seat = data;
+
+    xwl_seat->focus_window = NULL;
+}
+
+static void
+tablet_tool_down(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t serial)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    ValuatorMask mask;
+
+    xwl_seat->xwl_screen->serial = serial;
+
+    valuator_mask_zero(&mask);
+    QueuePointerEvents(xwl_tablet_tool->xdevice, ButtonPress, 1, 0, &mask);
+}
+
+static void
+tablet_tool_up(void *data, struct zwp_tablet_tool_v1 *tool)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    ValuatorMask mask;
+
+    valuator_mask_zero(&mask);
+    QueuePointerEvents(xwl_tablet_tool->xdevice, ButtonRelease, 1, 0, &mask);
+
+    xwl_tablet_tool->pressure = 0;
+    xwl_tablet_tool->tilt_x = 0;
+    xwl_tablet_tool->tilt_y = 0;
+    xwl_tablet_tool->rotation = 0;
+    xwl_tablet_tool->slider = 0;
+}
+
+static void
+tablet_tool_motion(void *data, struct zwp_tablet_tool_v1 *tool,
+                   wl_fixed_t x, wl_fixed_t y)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    int32_t dx, dy;
+    int sx = wl_fixed_to_int(x);
+    int sy = wl_fixed_to_int(y);
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    dx = xwl_seat->focus_window->window->drawable.x;
+    dy = xwl_seat->focus_window->window->drawable.y;
+
+    xwl_tablet_tool->x = dx + sx;
+    xwl_tablet_tool->y = dy + sy;
+}
+
+static void
+tablet_tool_pressure(void *data, struct zwp_tablet_tool_v1 *tool,
+                     uint32_t pressure_raw)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    float pressure = pressure_raw / 65535.0;
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    xwl_tablet_tool->pressure = (pressure * 2047.0);
+}
+
+static void
+tablet_tool_distance(void *data, struct zwp_tablet_tool_v1 *tool,
+                     uint32_t distance_raw)
+{
+}
+
+static void
+tablet_tool_tilt(void *data, struct zwp_tablet_tool_v1 *tool,
+                 int32_t tilt_x, int32_t tilt_y)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    xwl_tablet_tool->tilt_x = tilt_x / 100.0f;
+    xwl_tablet_tool->tilt_y = tilt_y / 100.0f;
+}
+
+static void
+tablet_tool_rotation(void *data, struct zwp_tablet_tool_v1 *tool,
+                     int32_t angle)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    float rotation = angle / 100.0f;
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    /* change origin (buttons facing right [libinput +90 degrees]) and
+     * scaling (5 points per degree) to match wacom driver behavior
+     */
+    rotation = remainderf(rotation + 90.0f, 360.0f);
+    rotation *= 5.0f;
+    xwl_tablet_tool->rotation = rotation;
+}
+
+static void
+tablet_tool_slider(void *data, struct zwp_tablet_tool_v1 *tool,
+                   int32_t position_raw)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    float position = position_raw / 65535.0;
+
+    if (!xwl_seat->focus_window)
+        return;
+
+    xwl_tablet_tool->slider = (position * 1799.0f) - 900.0f;
+}
+
+static void
+tablet_tool_wheel(void *data, struct zwp_tablet_tool_v1 *tool,
+                  int32_t degrees, int32_t clicks)
+{
+}
+
+static void
+tablet_tool_button_state(void *data, struct zwp_tablet_tool_v1 *tool,
+                         uint32_t serial, uint32_t button, uint32_t state)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    int xbtn = 0;
+    ValuatorMask mask;
+
+    if (button >= 0x100 && button <= 0x109)
+    {
+        xbtn = button - 0x100 + 1;
+    }
+    else if (button >= 0x130 && button <= 0x135)
+    {
+        xbtn = button - 0x130 + 10;
+    }
+    else if (button >= 0x126 && button <= 0x12b)
+    {
+        xbtn = button - 0x126 + 16;
+    }
+    else
+    {
+        switch (button)
+        {
+        case 0x110: /* BTN_LEFT    */
+        case 0x14a: /* BTN_TOUCH   */
+            xbtn = 1;
+            break;
+
+        case 0x112: /* BTN_MIDDLE  */
+        case 0x14b: /* BTN_STYLUS  */
+            xbtn = 2;
+            break;
+
+        case 0x111: /* BTN_RIGHT   */
+        case 0x14c: /* BTN_STYLUS2 */
+            xbtn = 3;
+            break;
+
+        case 0x113: /* BTN_SIDE    */
+        case 0x116: /* BTN_BACK    */
+            xbtn = 8;
+            break;
+
+        case 0x114: /* BTN_EXTRA   */
+        case 0x115: /* BTN_FORWARD */
+            xbtn = 9;
+            break;
+        }
+    }
+
+    if (!xbtn)
+    {
+        ErrorF("unknown tablet button number %d\n", button);
+        return;
+    }
+
+    xwl_seat->xwl_screen->serial = serial;
+
+    valuator_mask_zero(&mask);
+    QueuePointerEvents(xwl_tablet_tool->xdevice, state ? ButtonPress : ButtonRelease, xbtn, 0, &mask);
+}
+
+static void
+tablet_tool_frame(void *data, struct zwp_tablet_tool_v1 *tool, uint32_t time)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool = find_xwl_tablet_tool(xwl_seat, tool);
+    ValuatorMask mask;
+
+    valuator_mask_zero(&mask);
+    valuator_mask_set(&mask, 0, xwl_tablet_tool->x);
+    valuator_mask_set(&mask, 1, xwl_tablet_tool->y);
+    valuator_mask_set(&mask, 2, xwl_tablet_tool->pressure);
+    valuator_mask_set(&mask, 3, xwl_tablet_tool->tilt_x);
+    valuator_mask_set(&mask, 4, xwl_tablet_tool->tilt_y);
+    valuator_mask_set(&mask, 5, xwl_tablet_tool->rotation + xwl_tablet_tool->slider);
+
+    //FIXME: Store button mask in xwl_tablet_tool and send events *HERE* if changed
+    QueuePointerEvents(xwl_tablet_tool->xdevice, MotionNotify, 0,
+               POINTER_ABSOLUTE | POINTER_SCREEN, &mask);
+}
+
+static const struct zwp_tablet_tool_v1_listener tablet_tool_listener = {
+    tablet_tool_receive_type,
+    tablet_tool_receive_hardware_serial,
+    tablet_tool_receive_hardware_id_wacom,
+    tablet_tool_receive_capability,
+    tablet_tool_receive_done,
+    tablet_tool_receive_removed,
+    tablet_tool_proximity_in,
+    tablet_tool_proximity_out,
+    tablet_tool_down,
+    tablet_tool_up,
+    tablet_tool_motion,
+    tablet_tool_pressure,
+    tablet_tool_distance,
+    tablet_tool_tilt,
+    tablet_tool_rotation,
+    tablet_tool_slider,
+    tablet_tool_wheel,
+    tablet_tool_button_state,
+    tablet_tool_frame
+};
 
 static void
 tablet_seat_add_tablet(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_v1 *tablet)
@@ -1010,6 +1330,8 @@ tablet_seat_add_tool(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct 
     xwl_tablet_tool->tool = tool;
 
     xorg_list_add(&xwl_tablet_tool->link, &xwl_seat->tablet_tools);
+
+    zwp_tablet_tool_v1_add_listener(tool, &tablet_tool_listener, xwl_seat);
 }
 
 static const struct zwp_tablet_seat_v1_listener tablet_seat_listener = {
