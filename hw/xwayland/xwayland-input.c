@@ -839,6 +839,43 @@ xwl_seat_destroy(struct xwl_seat *xwl_seat)
 
 
 static void
+tablet_seat_add_tablet(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_v1 *tablet)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet *xwl_tablet;
+
+    xwl_tablet = calloc(sizeof *xwl_tablet, 1);
+    if (xwl_tablet == NULL) {
+        ErrorF("tablet_seat_add_input ENOMEM\n");
+        return;
+    }
+    xwl_tablet->tablet = tablet;
+
+    xorg_list_add(&xwl_tablet->link, &xwl_seat->tablets);
+}
+
+static void
+tablet_seat_add_tool(void *data, struct zwp_tablet_seat_v1 *tablet_seat, struct zwp_tablet_tool_v1 *tool)
+{
+    struct xwl_seat *xwl_seat = data;
+    struct xwl_tablet_tool *xwl_tablet_tool;
+
+    xwl_tablet_tool = calloc(sizeof *xwl_tablet_tool, 1);
+    if (xwl_tablet_tool == NULL) {
+        ErrorF("tablet_seat_add_tool ENOMEM\n");
+        return;
+    }
+    xwl_tablet_tool->tool = tool;
+
+    xorg_list_add(&xwl_tablet_tool->link, &xwl_seat->tablet_tools);
+}
+
+static const struct zwp_tablet_seat_v1_listener tablet_seat_listener = {
+    tablet_seat_add_tablet,
+    tablet_seat_add_tool
+};
+
+static void
 create_tablet_manager(struct xwl_screen *xwl_screen, uint32_t id, uint32_t version)
 {
     struct xwl_seat *xwl_seat;
@@ -847,6 +884,14 @@ create_tablet_manager(struct xwl_screen *xwl_screen, uint32_t id, uint32_t versi
                                                   id,
                                                   &zwp_tablet_manager_v1_interface,
                                                   min(version,1));
+
+    // create_input_device prepends the active seat to the seat list
+    xwl_seat = xorg_list_first_entry(&xwl_screen->seat_list, struct xwl_seat, link);
+    xwl_seat->tablet_seat = zwp_tablet_manager_v1_get_tablet_seat(xwl_screen->tablet_manager, xwl_seat->seat);
+    xorg_list_init(&xwl_seat->tablets);
+    xorg_list_init(&xwl_seat->tablet_tools);
+
+    zwp_tablet_seat_v1_add_listener(xwl_seat->tablet_seat, &tablet_seat_listener, xwl_seat);
 }
 
 static void
