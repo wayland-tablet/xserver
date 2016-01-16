@@ -837,6 +837,18 @@ xwl_seat_destroy(struct xwl_seat *xwl_seat)
     free(xwl_seat);
 }
 
+
+static void
+create_tablet_manager(struct xwl_screen *xwl_screen, uint32_t id, uint32_t version)
+{
+    struct xwl_seat *xwl_seat;
+
+    xwl_screen->tablet_manager = wl_registry_bind(xwl_screen->registry,
+                                                  id,
+                                                  &zwp_tablet_manager_v1_interface,
+                                                  min(version,1));
+}
+
 static void
 input_handler(void *data, struct wl_registry *registry, uint32_t id,
               const char *interface, uint32_t version)
@@ -846,6 +858,10 @@ input_handler(void *data, struct wl_registry *registry, uint32_t id,
     if (strcmp(interface, "wl_seat") == 0 && version >= 3) {
         create_input_device(xwl_screen, id, version);
         xwl_screen->expecting_event++;
+    }
+
+    if (strcmp(interface, "zwp_tablet_manager_v1") == 0 && version >= 1) {
+        create_tablet_manager(xwl_screen, id, version);
     }
 }
 
