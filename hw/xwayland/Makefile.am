@@ -59,6 +59,24 @@ Xwayland_LDADD += $(GLAMOR_LIBS) $(GBM_LIBS) -lEGL -lGL
 Xwayland_DEPENDENCIES = $(glamor_lib)
 endif
 
+
+tablet_sources = 				\
+	tablet-client-protocol.h		\
+	tablet-protocol.c
+
+nodist_Xwayland_SOURCES += $(tablet_sources)
+
+CLEANFILES += $(tablet_sources)
+
+BUILT_SOURCES += $(tablet_sources)
+
+
+tablet-client-protocol.h: $(WAYLAND_PROTOCOLS_DIR)/unstable/tablet/tablet-unstable-v1.xml
+	$(AM_V_GEN)$(WAYLAND_SCANNER) client-header < $< > $@
+tablet-protocol.c: $(WAYLAND_PROTOCOLS_DIR)/unstable/tablet/tablet-unstable-v1.xml
+	$(AM_V_GEN)$(WAYLAND_SCANNER) code < $< > $@
+
+
 EXTRA_DIST = drm.xml
 
 
